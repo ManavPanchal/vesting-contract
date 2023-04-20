@@ -22,7 +22,7 @@ contract vestingContract{
 
     mapping(address => beneficiaryData) private beneficiaries;
     vestingData[] public vestingSchedule;
-    uint private vestingCurrentId;
+    uint public vestingCurrentId;
 
     event withdrawn(address indexed _receiver, uint indexed _amount, string indexed _statement);
     event lockedVesting(address indexed _provider, uint indexed _slicePeriod ,uint indexed _expiryOfVesting);
@@ -35,7 +35,7 @@ contract vestingContract{
     modifier checkAccesibility(uint _vestingId){
         require(_vestingId < vestingCurrentId, "Please enter valid vestingId");
         require( block.timestamp >= vestingSchedule[_vestingId].startDate , "vesting not even started yet");
-        require( beneficiaries[msg.sender].allowedToVest[_vestingId] , "you are not a participient");
+        require( beneficiaries[msg.sender].allowedToVest[_vestingId] || vestingSchedule[_vestingId].provider == msg.sender, "you are neither a participent of this vesting nor provider of this vesting");
         _;
     }
 
@@ -66,11 +66,9 @@ contract vestingContract{
         return SlicePeriods;
     }
 
-    function VestingSchedule(address _address, uint _vestingId) public returns(vestingData memory, uint amountWithdrawnTillNow){
-        require( beneficiaries[_address].allowedToVest[_vestingId] || vestingSchedule[_vestingId].provider == _address, "this beneficiary is neither a participent of this vesting nor provider of this vesting");
+    function updateVestingSchedule(uint _vestingId) public returns(vestingData memory){
         vestingSchedule[_vestingId].releasedToken = numberOfSlicePeriodTillNow(_vestingId) * vestingSchedule[_vestingId].tokenPerSlicePeriod;
-
-        return (vestingSchedule[_vestingId], beneficiaries[_address].amountWithdrawnTillNow[_vestingId]);
+        return (vestingSchedule[_vestingId]);
     }
 
     function checkWithdrawableAmount(uint256 _vestingId) external view returns(uint){
