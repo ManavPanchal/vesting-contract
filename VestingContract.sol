@@ -21,7 +21,7 @@ contract vestingContract{
     }
 
     mapping(address => beneficiaryData) private beneficiaries;
-    vestingData[] public vestingSchedule;
+    vestingData[] private vestingSchedule;
     uint public vestingCurrentId;
 
     event withdrawn(address indexed _receiver, uint indexed _amount, string indexed _statement);
@@ -35,7 +35,6 @@ contract vestingContract{
     modifier checkAccesibility(uint _vestingId){
         require(_vestingId < vestingCurrentId, "Please enter valid vestingId");
         require( block.timestamp >= vestingSchedule[_vestingId].startDate , "vesting not even started yet");
-        require( beneficiaries[msg.sender].allowedToVest[_vestingId] || vestingSchedule[_vestingId].provider == msg.sender, "you are neither a participent of this vesting nor provider of this vesting");
         _;
     }
 
@@ -44,8 +43,8 @@ contract vestingContract{
         uint _vestingId = vestingCurrentId;
         vestingCurrentId++;
         
-        uint actualAmount = _amountOfTokenPerSlicePeriod * (_expiryOfVesting/_slicePeriodOfVesting) * (_receivers.length);
-        IERC20(_tokenAddress).transferFrom(_provider, address(this), actualAmount);
+        uint totalAmountOfToken = _amountOfTokenPerSlicePeriod * (_expiryOfVesting/_slicePeriodOfVesting) * (_receivers.length);
+        IERC20(_tokenAddress).transferFrom(_provider, address(this), totalAmountOfToken);
         
         for(uint i=0; i<_receivers.length; i++){
             beneficiaries[_receivers[i]].allowedToVest[_vestingId] = true;
@@ -55,29 +54,41 @@ contract vestingContract{
         vestingSchedule.push(tempVestingSchedule);
         
         emit lockedVesting(_provider, _slicePeriodOfVesting ,_expiryOfVesting);
-        emit lockedTokenAmount(_tokenAddress, _amountOfTokenPerSlicePeriod, actualAmount);
+        emit lockedTokenAmount(_tokenAddress, _amountOfTokenPerSlicePeriod, totalAmountOfToken);
         return true;
     }
 
-    function numberOfSlicePeriodTillNow(uint _vestingId) private view checkAccesibility(_vestingId) returns(uint){
+    function amountWithdrawnTillNow(uint _vestingId) public view checkAccesibility(_vestingId) returns(uint){
+        require( beneficiaries[msg.sender].allowedToVest[_vestingId] , "Only beneficiary is allowed");
+        return beneficiaries[msg.sender].amountWithdrawnTillNow[_vestingId];
+    }
+
+    function numberOfSlicePeriodTillNow(uint _vestingId) private view returns(uint){
         uint currentTime;
         (block.timestamp <= vestingSchedule[_vestingId].expiryDate) ? currentTime = block.timestamp : currentTime = vestingSchedule[_vestingId].expiryDate;
         uint SlicePeriods = (currentTime - vestingSchedule[_vestingId].startDate) / vestingSchedule[_vestingId].slicePeriod;
         return SlicePeriods;
     }
 
-    function updateVestingSchedule(uint _vestingId) public returns(vestingData memory){
+    function releaseToken(uint _vestingId) public  checkAccesibility(_vestingId) returns(vestingData memory){
+        require( beneficiaries[msg.sender].allowedToVest[_vestingId] , "Only beneficiary is allowed to release tokens");
         vestingSchedule[_vestingId].releasedToken = numberOfSlicePeriodTillNow(_vestingId) * vestingSchedule[_vestingId].tokenPerSlicePeriod;
         return (vestingSchedule[_vestingId]);
     }
 
-    function checkWithdrawableAmount(uint256 _vestingId) external view returns(uint){
+    function viewVestingSchedule(uint _vestingId) public view returns(vestingData memory){
+        return vestingSchedule[_vestingId];
+    }
+
+    function checkWithdrawableAmount(uint256 _vestingId) external view checkAccesibility(_vestingId) returns(uint){
+        require( beneficiaries[msg.sender].allowedToVest[_vestingId] , "Only beneficiary is allowed");
         uint realeasedToken = numberOfSlicePeriodTillNow(_vestingId) * vestingSchedule[_vestingId].tokenPerSlicePeriod;
         uint withdrawableAmount =  realeasedToken - beneficiaries[msg.sender].amountWithdrawnTillNow[_vestingId];
         return withdrawableAmount;
     }
 
-    function withdraw(uint _withdrawalAmount, uint256 _vestingId) external returns(bool success){
+    function withdraw(uint _withdrawalAmount, uint256 _vestingId) external checkAccesibility(_vestingId) returns(bool success){
+        require( beneficiaries[msg.sender].allowedToVest[_vestingId] , "Only beneficiary is allowed");
         vestingSchedule[_vestingId].releasedToken = numberOfSlicePeriodTillNow(_vestingId) * vestingSchedule[_vestingId].tokenPerSlicePeriod;
         
         uint amountRemainToWithdraw = vestingSchedule[_vestingId].releasedToken - beneficiaries[msg.sender].amountWithdrawnTillNow[_vestingId];
@@ -88,7 +99,7 @@ contract vestingContract{
         require(withdrawableAmount >= _withdrawalAmount, "you don't have access to withdraw this much amount!, you can check withdrawable amount");
 
         beneficiaries[msg.sender].amountWithdrawnTillNow[_vestingId] += _withdrawalAmount;
-        IERC20(vestingSchedule[_vestingId].tokenAddress).transferFrom(address(this), msg.sender, _withdrawalAmount);
+        IERC20(vestingSchedule[_vestingId].tokenAddress).transfer(msg.sender, _withdrawalAmount);
         emit withdrawn(msg.sender, _withdrawalAmount, "withdrawn");
         return true;
     }
