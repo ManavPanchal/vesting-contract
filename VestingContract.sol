@@ -76,7 +76,7 @@ contract vestingContract{
         return (vestingSchedule[_vestingId]);
     }
 
-    function viewVestingSchedule(uint _vestingId) public view returns(vestingData memory){
+    function viewVestingSchedule(uint _vestingId) public view checkAccesibility(_vestingId) returns(vestingData memory){
         return vestingSchedule[_vestingId];
     }
 
